@@ -1,0 +1,17 @@
+{
+  "datasets": {
+    "10_classes": {
+        "train": "./data/10_classes/train_dataset",
+        "val": "./data/10_classes/val_dataset",
+        "test": "./data/10_classes/test_dataset"
+    },
+    "20_classes": {
+        "train": "./data/20_classes/train_dataset",
+        "val": "./data/20_classes/val_dataset",
+        "test": "./data/20_classes/test_dataset"
+    }    
+  },
+  "checkpoints": {
+    "save_dir": "./checkpoints"
+  }
+}
