@@ -9,6 +9,7 @@ from config import Config, ModelType
 from baseline_model import BaselineModel
 from frozen_model import FrozenModel
 from lwf_model import LwFModel
+from ewc_model import EWCModel, EWC
 from lego_dataset import LegoDataset
 
 
@@ -45,19 +46,19 @@ def run_experiment_add_classes(model_class, model_type, cfg, device, data_root, 
     test_loader_20 = DataLoader(test_20, batch_size=32)
 
     model = model_class(num_classes=10, config=cfg, device=device)
-    start_time = time.time()
     model.train_model(train_loader_10, num_epochs=5)
-    train_time_stage1 = time.time() - start_time
     acc_0 = model.evaluate_model(test_loader_10)
-
-    teacher_model = copy.deepcopy(model.model)
 
     model.expand_classifier(num_new_classes=10)
     acc_base_before = model.evaluate_model(test_loader_10)
 
     start_time = time.time()
     if model_type == ModelType.LwF:
+        teacher_model = copy.deepcopy(model.model)
         model.train_model_lwf(train_loader_20, previous_model=teacher_model, num_epochs=5)
+    elif model_type == ModelType.EWC:
+        ewc = EWC(model.model, train_loader_10, device)
+        model.train_model_ewc(train_loader_20, ewc, ewc_lambda=1000, num_epochs=5)
     else:
         model.train_model(train_loader_20, num_epochs=5)
     train_time_stage2 = time.time() - start_time
@@ -82,7 +83,7 @@ def run_experiment_add_classes(model_class, model_type, cfg, device, data_root, 
         "Novel ↑": round(acc_novel, 1),
         "Forget ↓": round(forget, 1),
         "Acc (2)": round(acc_2, 1),
-        "Time (s)": round(train_time_stage1 + train_time_stage2, 1),
+        "Time (s)": round(train_time_stage2, 1),
         "Model Size (MB)": model_size_MB,
         "Data Size (MB)": data_size_MB
     })
@@ -100,12 +101,20 @@ def run_experiment_add_data(model_class, model_type, cfg, device, data_root, sou
     test_loader = DataLoader(test_full, batch_size=32)
 
     model = model_class(num_classes=10, config=cfg, device=device)
-    start_time = time.time()
     model.train_model(train_loader_small, num_epochs=5)
-    model.train_model(train_loader_full, num_epochs=5)
-    total_train_time = time.time() - start_time
-
     acc_0 = model.evaluate_model(test_loader)
+
+    start_time = time.time()
+    if model_type == ModelType.LwF:
+        teacher_model = copy.deepcopy(model.model)
+        model.train_model_lwf(train_loader_full, previous_model=teacher_model, num_epochs=5)
+    elif model_type == ModelType.EWC:
+        ewc = EWC(model.model, train_loader_small, device)
+        model.train_model_ewc(train_loader_full, ewc, ewc_lambda=1000, num_epochs=5)
+    else:
+        model.train_model(train_loader_full, num_epochs=5)
+    train_time_stage2 = time.time() - start_time
+
     acc_1 = model.evaluate_model(test_loader)
 
     model_path = cfg.checkpoint_path(10, model_type)
@@ -122,7 +131,7 @@ def run_experiment_add_data(model_class, model_type, cfg, device, data_root, sou
         "Novel ↑": "-",
         "Forget ↓": round(acc_0 - acc_1, 1),
         "Acc (2)": round(acc_1, 1),
-        "Time (s)": round(total_train_time, 1),
+        "Time (s)": round(train_time_stage2, 1),
         "Model Size (MB)": model_size_MB,
         "Data Size (MB)": data_size_MB
     })
@@ -141,7 +150,8 @@ def main():
     for model_class, model_type in [
         (BaselineModel, ModelType.Baseline),
         (FrozenModel, ModelType.Frozen),
-        (LwFModel, ModelType.LwF)
+        (LwFModel, ModelType.LwF),
+        (EWCModel, ModelType.EWC)
     ]:
         run_experiment_add_classes(model_class, model_type, cfg, device, data_root, source, results)
         run_experiment_add_data(model_class, model_type, cfg, device, data_root, source, results)
