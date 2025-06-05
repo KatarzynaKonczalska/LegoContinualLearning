@@ -4,8 +4,8 @@ from enum import Enum
 
 
 class ModelType(Enum):
-    Baseline = "Baseline"   # Full Fine Tuning
-    Frozen = "Frozen"       # Feature Extractor Frozen
+    Baseline = "Baseline"
+    Frozen = "Frozen"
     LwF = "LwF"
     EWC = "EWC"
     Rehearsal = "Rehearsal"
@@ -26,11 +26,11 @@ class Config:
         try:
             return self.config["datasets"][key][split.value]
         except KeyError:
-            raise ValueError(f"Nie znaleziono ścieżki dla {split.value} przy {num_classes} klasach.")
+            raise ValueError(f"Nie znaleziono ścieżki dla splitu '{split.value}' przy {num_classes} klasach.")
 
     def checkpoint_path(self, num_classes: int, model_type: ModelType) -> str:
         try:
             base_dir = self.config["checkpoints"]["save_dir"]
-            return str(Path(base_dir) / f"{num_classes}_classes" / model_type.value / "model.pt")
+            return str(Path(base_dir) / model_type.value / f"{num_classes}_classes" / "model.pt")
         except KeyError as e:
             raise ValueError(f"Błąd w konfiguracji checkpoints: brakujący klucz {e}")
