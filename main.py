@@ -10,6 +10,7 @@ from baseline_model import BaselineModel
 from frozen_model import FrozenModel
 from lwf_model import LwFModel
 from ewc_model import EWCModel, EWC
+from rehearsal_model import RehearsalModel
 from lego_dataset import LegoDataset
 
 
@@ -49,6 +50,9 @@ def run_experiment_add_classes(model_class, model_type, cfg, device, data_root, 
     model.train_model(train_loader_10, num_epochs=5)
     acc_0 = model.evaluate_model(test_loader_10)
 
+    if model_type == ModelType.Rehearsal:
+        model.store_rehearsal_data(train_10)
+
     model.expand_classifier(num_new_classes=10)
     acc_base_before = model.evaluate_model(test_loader_10)
 
@@ -59,6 +63,8 @@ def run_experiment_add_classes(model_class, model_type, cfg, device, data_root, 
     elif model_type == ModelType.EWC:
         ewc = EWC(model.model, train_loader_10, device)
         model.train_model_ewc(train_loader_20, ewc, ewc_lambda=1000, num_epochs=5)
+    elif model_type == ModelType.Rehearsal:
+        model.train_model_with_rehearsal(train_20, num_epochs=5)
     else:
         model.train_model(train_loader_20, num_epochs=5)
     train_time_stage2 = time.time() - start_time
@@ -76,16 +82,16 @@ def run_experiment_add_classes(model_class, model_type, cfg, device, data_root, 
     data_size_MB = folder_size_mb(train_20.root_dir)
 
     results.append({
-        "Method": model_type.value,
-        "Acc (0)": round(acc_0, 1),
-        "Acc (1)": round(acc_1, 1),
-        "Base ↓": round(acc_1, 1),
-        "Novel ↑": round(acc_novel, 1),
-        "Forget ↓": round(forget, 1),
-        "Acc (2)": round(acc_2, 1),
-        "Time (s)": round(train_time_stage2, 1),
-        "Model Size (MB)": model_size_MB,
-        "Data Size (MB)": data_size_MB
+        "Method": model_type.value,  # Nazwa metody uczenia
+        "Acc (0)": round(acc_0, 1),  # Accuracy na starym zbiorze (10 klas) po pierwszym treningu
+        "Acc (1)": round(acc_1, 1),  # Accuracy na starym zbiorze po douczeniu (20 klas)
+        "Base ↓": round(acc_1, 1),  # To samo co Acc(1), ułatwia czytanie jako spadek jakości
+        "Novel ↑": round(acc_novel, 1),  # Accuracy na nowych klasach (11–20) po douczeniu
+        "Forget ↓": round(forget, 1),  # Różnica między jakością przed i po douczeniu na starym zbiorze
+        "Acc (2)": round(acc_2, 1),  # Średnia accuracy między starym i nowym zbiorem
+        "Time (s)": round(train_time_stage2, 1),  # Czas treningu etapu 2 (douczenie)
+        "Model Size (MB)": model_size_MB,  # Rozmiar modelu po douczeniu (plik .pt)
+        "Data Size (MB)": data_size_MB  # Rozmiar danych wykorzystanych do douczania
     })
 
 
@@ -104,6 +110,9 @@ def run_experiment_add_data(model_class, model_type, cfg, device, data_root, sou
     model.train_model(train_loader_small, num_epochs=5)
     acc_0 = model.evaluate_model(test_loader)
 
+    if model_type == ModelType.Rehearsal:
+        model.store_rehearsal_data(train_small)
+
     start_time = time.time()
     if model_type == ModelType.LwF:
         teacher_model = copy.deepcopy(model.model)
@@ -111,6 +120,8 @@ def run_experiment_add_data(model_class, model_type, cfg, device, data_root, sou
     elif model_type == ModelType.EWC:
         ewc = EWC(model.model, train_loader_small, device)
         model.train_model_ewc(train_loader_full, ewc, ewc_lambda=1000, num_epochs=5)
+    elif model_type == ModelType.Rehearsal:
+        model.train_model_with_rehearsal(train_full, num_epochs=5)
     else:
         model.train_model(train_loader_full, num_epochs=5)
     train_time_stage2 = time.time() - start_time
@@ -151,10 +162,13 @@ def main():
         (BaselineModel, ModelType.Baseline),
         (FrozenModel, ModelType.Frozen),
         (LwFModel, ModelType.LwF),
-        (EWCModel, ModelType.EWC)
+        (EWCModel, ModelType.EWC),
+        (RehearsalModel, ModelType.Rehearsal)
     ]:
         run_experiment_add_classes(model_class, model_type, cfg, device, data_root, source, results)
         run_experiment_add_data(model_class, model_type, cfg, device, data_root, source, results)
+        torch.cuda.empty_cache()
+
 
     df = pd.DataFrame(results)
     print("\n📊 Continual Learning Results with Resources:\n", df.to_markdown(index=False))

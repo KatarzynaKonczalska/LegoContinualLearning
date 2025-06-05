@@ -13,7 +13,8 @@ class LegoDataset(Dataset):
                  split="train", 
                  split_ratio=(0.7, 0.15, 0.15), 
                  transform=None, 
-                 seed=42):
+                 seed=42,
+                 manual_samples=None):
         """
         :param root_dir: katalog bazowy (np. '.../05 - dataset')
         :param source: 'photos' lub 'renders'
@@ -22,6 +23,7 @@ class LegoDataset(Dataset):
         :param split_ratio: domyślny podział
         :param transform: torchvision transforms
         :param seed: losowość do podziału wewnątrz klas
+        :param manual_samples: lista (path, label) do bezpośredniego załadowania
         """
         assert split in {"train", "val", "test"}, "split must be train, val or test"
         self.transform = transform or transforms.Compose([
@@ -31,6 +33,13 @@ class LegoDataset(Dataset):
 
         self.samples = []
         self.root_dir = os.path.join(root_dir, source)
+        self.source = source
+        self.split = split
+        self.num_classes = num_classes
+
+        if manual_samples is not None:
+            self.samples = manual_samples
+            return
 
         # Stałe klasy na podstawie posortowanej listy
         class_names = sorted(os.listdir(self.root_dir))[:num_classes]
