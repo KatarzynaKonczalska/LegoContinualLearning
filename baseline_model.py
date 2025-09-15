@@ -18,8 +18,33 @@ class BaselineModel: #Full Fine Tuning
         self.model.fc = nn.Linear(self.model.fc.in_features, self.num_classes)
         self.model = self.model.to(self.device)
 
+    def set_lr(self, lr: float):
+        self.lr = lr
+
+    def freeze_batchnorm(self):
+        for m in self.model.modules():
+            if isinstance(m, nn.BatchNorm2d):
+                m.eval()
+                for p in m.parameters():
+                    p.requires_grad = False
+
+    def get_param_groups(self, lr_backbone: float, lr_head: float):
+        backbone_params = []
+        head_params = []
+        for name, p in self.model.named_parameters():
+            if not p.requires_grad:
+                continue
+            if name.startswith('fc.'):
+                head_params.append(p)
+            else:
+                backbone_params.append(p)
+        return [
+            {"params": backbone_params, "lr": lr_backbone},
+            {"params": head_params, "lr": lr_head},
+        ]
+
     def train_model(self, dataloader, num_epochs=10):
-        optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
+        optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.cfg.weight_decay)
         criterion = nn.CrossEntropyLoss()
 
         self.model.train()

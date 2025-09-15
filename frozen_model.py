@@ -22,7 +22,7 @@ class FrozenModel(BaselineModel):
         self.model = self.model.to(self.device)
 
     def train_model(self, dataloader, num_epochs=10):
-        optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
+        optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.cfg.weight_decay)
         criterion = nn.CrossEntropyLoss()
 
         self.model.train()

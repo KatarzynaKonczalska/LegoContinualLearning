@@ -7,13 +7,18 @@ import os
 
 
 class LwFModel(BaselineModel):
-    def __init__(self, num_classes, config, device=None, lr=0.001, temperature=2.0, alpha=1.0):
+    def __init__(self, num_classes, config, device=None, lr=0.001, temperature=2.0, alpha=0.5):
         super().__init__(num_classes, config, device=device, lr=lr)
         self.temperature = temperature  # do softmaxu
-        self.alpha = alpha              # waga strat distylacyjnych
+        self.alpha = alpha              # waga strat distylacyjnych (0.5 to częsty wybór)
 
     def train_model_lwf(self, dataloader, previous_model, num_epochs=5):
-        optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
+        # Param groups: smaller LR for backbone than classifier
+        param_groups = self.get_param_groups(
+            lr_backbone=self.lr * self.cfg.lr_backbone_mult,
+            lr_head=self.lr * self.cfg.lr_head_mult,
+        )
+        optimizer = optim.Adam(param_groups, lr=self.lr, weight_decay=self.cfg.weight_decay)
         criterion_cls = nn.CrossEntropyLoss()
         criterion_distill = nn.KLDivLoss(reduction='batchmean')
 
@@ -34,13 +39,12 @@ class LwFModel(BaselineModel):
                 with torch.no_grad():
                     teacher_outputs = previous_model(images)
 
-                # Rozdziel predykcje na klasy stare i nowe
+                # Rozdziel predykcje na klasy stare i nowe (teacher posiada wyłącznie stare klasy)
                 num_old_classes = teacher_outputs.shape[1]
                 student_old = outputs[:, :num_old_classes]
-                student_new = outputs
 
-                # 1. klasyfikacja na etykietach (nowe klasy)
-                loss_cls = criterion_cls(student_new, labels)
+                # 1. klasyfikacja na wszystkich dostępnych klasach (etykiety odpowiadają rozszerzonej numeracji)
+                loss_cls = criterion_cls(outputs, labels)
 
                 # 2. distylacja logitów starych klas
                 # zastosuj softmax z temperaturą
@@ -52,6 +56,8 @@ class LwFModel(BaselineModel):
 
                 total = self.alpha * distill_loss + (1 - self.alpha) * loss_cls
                 total.backward()
+                if self.cfg.grad_clip_norm and self.cfg.grad_clip_norm > 0:
+                    nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_clip_norm)
                 optimizer.step()
                 total_loss += total.item()
 

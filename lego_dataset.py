@@ -14,7 +14,8 @@ class LegoDataset(Dataset):
                  split_ratio=(0.7, 0.15, 0.15), 
                  transform=None, 
                  seed=42,
-                 manual_samples=None):
+                 manual_samples=None,
+                 include_classes=None):
         """
         :param root_dir: katalog bazowy (np. '.../05 - dataset')
         :param source: 'photos' lub 'renders'
@@ -24,30 +25,55 @@ class LegoDataset(Dataset):
         :param transform: torchvision transforms
         :param seed: losowość do podziału wewnątrz klas
         :param manual_samples: lista (path, label) do bezpośredniego załadowania
+        :param include_classes: opcjonalna lista indeksów klas (w zakresie [0, num_classes)) do włączenia.
+                                 Użyteczne do tworzenia zbiorów zawierających tylko nowe klasy (np. 10..19),
+                                 przy zachowaniu oryginalnych indeksów etykiet (np. 10..19) zgodnych z klasyfikatorem.
         """
         assert split in {"train", "val", "test"}, "split must be train, val or test"
-        self.transform = transform or transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor()
-        ])
+        if transform is None:
+            imagenet_mean = [0.485, 0.456, 0.406]
+            imagenet_std = [0.229, 0.224, 0.225]
+            if split == "train":
+                self.transform = transforms.Compose([
+                    transforms.Resize((256, 256)),
+                    transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.02),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=imagenet_mean, std=imagenet_std)
+                ])
+            else:
+                self.transform = transforms.Compose([
+                    transforms.Resize((256, 256)),
+                    transforms.CenterCrop(224),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=imagenet_mean, std=imagenet_std)
+                ])
+        else:
+            self.transform = transform
 
         self.samples = []
         self.root_dir = os.path.join(root_dir, source)
         self.source = source
         self.split = split
         self.num_classes = num_classes
+        self.include_classes = include_classes
 
         if manual_samples is not None:
             self.samples = manual_samples
             return
 
-        # Stałe klasy na podstawie posortowanej listy
-        class_names = sorted(os.listdir(self.root_dir))[:num_classes]
+        # Stałe klasy na podstawie posortowanej listy (0..num_classes-1)
+        all_class_names = sorted(os.listdir(self.root_dir))
+        class_names = all_class_names[:num_classes]
         self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(class_names)}
 
         random.seed(seed)
 
         for cls_name in class_names:
+            cls_idx = self.class_to_idx[cls_name]
+            if self.include_classes is not None and cls_idx not in self.include_classes:
+                continue  # pomiń klasy spoza wybranego zakresu
             class_path = os.path.join(self.root_dir, cls_name)
             images = [f for f in os.listdir(class_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
             images.sort()
@@ -65,7 +91,7 @@ class LegoDataset(Dataset):
                 selected = images[n_train + n_val:]
 
             for fname in selected:
-                self.samples.append((os.path.join(class_path, fname), self.class_to_idx[cls_name]))
+                self.samples.append((os.path.join(class_path, fname), cls_idx))
 
     def __len__(self):
         return len(self.samples)
